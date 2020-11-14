@@ -59,21 +59,27 @@ func startQuiz(problems []problem, flags flags) {
 
 		go getAnswer(answerChanel)
 
-		procedeWithQuizAndStopWHenTimerEnds(timer.C, answerChanel, p)
+		result := procedeWithQuizAndStopWHenTimerEnds(timer.C, answerChanel, p)
+
+		if result == false {
+			break
+		}
 	}
 
 	fmt.Printf("Result %d/%d \n", goodAnswers, len(problems))
 }
 
-func procedeWithQuizAndStopWHenTimerEnds(timerChan <-chan time.Time, answerChan <-chan string, problem problem) {
+func procedeWithQuizAndStopWHenTimerEnds(timerChan <-chan time.Time, answerChan <-chan string, problem problem) bool {
 	select {
 	case <-timerChan:
 		fmt.Println()
-		return
+		return false
 	case answer := <-answerChan:
 		if problem.validateAnswer(answer) {
 			goodAnswers++
 		}
+
+		return true
 	}
 }
 
