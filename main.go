@@ -9,16 +9,23 @@ import (
 	"time"
 )
 
+var goodAnswers = 0
+
 func main() {
-	csvFileName := flag.String("csv", "problems.csv", "a csv file in format of 'question,answer'")
-	timeout := flag.Int("timer", 5, "Time after which quiz will end")
+	flags := initFlags()
+	lines := readFile(flags.csvFile)
+	problems := parseLInes(lines)
 
-	flag.Parse()
+	prepareToStart()
 
-	file, err := os.Open(*csvFileName)
+	startQuiz(problems, flags)
+}
+
+func readFile(filepath string) [][]string {
+	file, err := os.Open(filepath)
 
 	if err != nil {
-		exit(fmt.Sprintf("Failed to open the csv file: %s\n", *csvFileName))
+		exit(fmt.Sprintf("Failed to open the csv file: %s\n", filepath))
 	}
 
 	r := csv.NewReader(file)
@@ -28,42 +35,7 @@ func main() {
 		exit(fmt.Sprintf("Failed to pares the provided CSV file."))
 	}
 
-	problems := parseLInes(lines)
-
-	var t string
-	fmt.Println("Press enter to start")
-	_, _ = fmt.Scanf("%s\n", &t)
-
-	timer := time.NewTimer(time.Duration(*timeout) * time.Second)
-	goodAnswers := 0
-
-	for i, p := range problems {
-		fmt.Printf("Problem #%d: %s = \n", i+1, p.question)
-
-		answerChanel := make(chan string)
-		go func() {
-			var answer string
-
-			_, err = fmt.Scanf("%s\n", &answer)
-
-			if err != nil {
-				exit("There was an error parsing your answer")
-			}
-			answerChanel <- answer
-		}()
-
-		select {
-		case <-timer.C:
-			fmt.Println()
-			return
-		case answer := <-answerChanel:
-			if answer == p.answer {
-				goodAnswers++
-			}
-		}
-	}
-
-	fmt.Printf("Result %d/%d \n", goodAnswers, len(problems))
+	return lines
 }
 
 func parseLInes(Lines [][]string) []problem {
@@ -78,9 +50,83 @@ func parseLInes(Lines [][]string) []problem {
 	return ret
 }
 
+func startQuiz(problems []problem, flags flags) {
+	timer := startTimer(flags)
+	answerChanel := make(chan string)
+
+	for i, p := range problems {
+		fmt.Printf("Problem #%d: %s = \n", i+1, p.question)
+
+		go getAnswer(answerChanel)
+
+		procedeWithQuizAndStopWHenTimerEnds(timer.C, answerChanel, p)
+	}
+
+	fmt.Printf("Result %d/%d \n", goodAnswers, len(problems))
+}
+
+func procedeWithQuizAndStopWHenTimerEnds(timerChan <-chan time.Time, answerChan <-chan string, problem problem) {
+	select {
+	case <-timerChan:
+		fmt.Println()
+		return
+	case answer := <-answerChan:
+		if problem.validateAnswer(answer) {
+			goodAnswers++
+		}
+	}
+}
+
+func prepareToStart() {
+	var t string
+	fmt.Println("Press enter to start")
+	_, _ = fmt.Scanf("%s\n", &t)
+}
+
+func getAnswer(answerChan chan<- string) {
+	var answer string
+
+	_, err := fmt.Scanf("%s\n", &answer)
+
+	if err != nil {
+		exit("There was an error parsing your answer")
+	}
+
+	answerChan <- answer
+}
+
+func initFlags() flags {
+	csvFileName := flag.String("csv", "problems.csv", "a csv file in format of 'question,answer'")
+	timeout := flag.Int("timer", 5, "Time after which quiz will end")
+
+	flag.Parse()
+
+	return flags{
+		csvFile:   *csvFileName,
+		timerTime: *timeout,
+	}
+}
+
 type problem struct {
 	question string
 	answer   string
+}
+
+func (p problem) validateAnswer(answer string) bool {
+	if answer != p.answer {
+		return false
+	}
+
+	return true
+}
+
+func startTimer(flags flags) *time.Timer {
+	return time.NewTimer(time.Duration(flags.timerTime) * time.Second)
+}
+
+type flags struct {
+	csvFile   string
+	timerTime int
 }
 
 func exit(msg string) {
